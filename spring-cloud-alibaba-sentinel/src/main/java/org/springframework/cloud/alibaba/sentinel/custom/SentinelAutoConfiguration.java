@@ -27,7 +27,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.cloud.alibaba.sentinel.SentinelProperties;
-import org.springframework.cloud.alibaba.sentinel.datasource.SentinelDataSourcePostProcessor;
+import org.springframework.cloud.alibaba.sentinel.datasource.converter.JsonConverter;
+import org.springframework.cloud.alibaba.sentinel.datasource.converter.XmlConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.StringUtils;
@@ -39,12 +40,17 @@ import com.alibaba.csp.sentinel.adapter.servlet.config.WebServletConfig;
 import com.alibaba.csp.sentinel.annotation.aspectj.SentinelResourceAspect;
 import com.alibaba.csp.sentinel.config.SentinelConfig;
 import com.alibaba.csp.sentinel.init.InitExecutor;
+import com.alibaba.csp.sentinel.log.LogBase;
 import com.alibaba.csp.sentinel.transport.config.TransportConfig;
 import com.alibaba.csp.sentinel.util.AppNameUtil;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 
 /**
  * @author xiaojing
  * @author jiashuai.xie
+ * @author <a href="mailto:fangjian0423@gmail.com">Jim</a>
  */
 @Configuration
 @ConditionalOnProperty(name = "spring.cloud.sentinel.enabled", matchIfMissing = true)
@@ -65,7 +71,6 @@ public class SentinelAutoConfiguration {
 
 	@PostConstruct
 	private void init() {
-
 		if (StringUtils.isEmpty(System.getProperty(AppNameUtil.APP_NAME))
 				&& StringUtils.hasText(projectName)) {
 			System.setProperty(AppNameUtil.APP_NAME, projectName);
@@ -87,8 +92,9 @@ public class SentinelAutoConfiguration {
 					properties.getTransport().getHeartbeatIntervalMs());
 		}
 		if (StringUtils.isEmpty(System.getProperty(SentinelConfig.CHARSET))
-				&& StringUtils.hasText(properties.getCharset())) {
-			System.setProperty(SentinelConfig.CHARSET, properties.getCharset());
+				&& StringUtils.hasText(properties.getMetric().getCharset())) {
+			System.setProperty(SentinelConfig.CHARSET,
+					properties.getMetric().getCharset());
 		}
 		if (StringUtils
 				.isEmpty(System.getProperty(SentinelConfig.SINGLE_METRIC_FILE_SIZE))
@@ -107,10 +113,19 @@ public class SentinelAutoConfiguration {
 			System.setProperty(SentinelConfig.COLD_FACTOR,
 					properties.getFlow().getColdFactor());
 		}
-
 		if (StringUtils.hasText(properties.getServlet().getBlockPage())) {
 			WebServletConfig.setBlockPage(properties.getServlet().getBlockPage());
 		}
+		if (StringUtils.isEmpty(System.getProperty(LogBase.LOG_DIR))
+				&& StringUtils.hasText(properties.getLog().getDir())) {
+			System.setProperty(LogBase.LOG_DIR, properties.getLog().getDir());
+		}
+		if (StringUtils.isEmpty(System.getProperty(LogBase.LOG_NAME_USE_PID))
+				&& properties.getLog().isSwitchPid()) {
+			System.setProperty(LogBase.LOG_NAME_USE_PID,
+					String.valueOf(properties.getLog().isSwitchPid()));
+		}
+
 		urlBlockHandlerOptional.ifPresent(WebCallbackManager::setUrlBlockHandler);
 		urlCleanerOptional.ifPresent(WebCallbackManager::setUrlCleaner);
 
@@ -135,9 +150,29 @@ public class SentinelAutoConfiguration {
 	}
 
 	@Bean
-	@ConditionalOnMissingBean
-	public SentinelDataSourcePostProcessor sentinelDataSourcePostProcessor() {
-		return new SentinelDataSourcePostProcessor();
+	public SentinelDataSourceHandler sentinelDataSourceHandler() {
+		return new SentinelDataSourceHandler();
+	}
+
+	@Bean("sentinel-json-converter")
+	public JsonConverter jsonConverter() {
+		return new JsonConverter(objectMapper());
+	}
+
+	private ObjectMapper objectMapper() {
+		return new ObjectMapper();
+	}
+
+	@ConditionalOnClass(XmlMapper.class)
+	protected static class SentinelXmlConfiguration {
+		@Bean("sentinel-xml-converter")
+		public XmlConverter xmlConverter() {
+			return new XmlConverter(xmlMapper());
+		}
+
+		private XmlMapper xmlMapper() {
+			return new XmlMapper();
+		}
 	}
 
 }
